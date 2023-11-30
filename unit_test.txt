@@ -1,0 +1,3 @@
+Run,Column headers
+SRR21722586,run_1
+SRR21722584,run_2
