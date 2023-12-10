@@ -1,7 +1,7 @@
 #!/bin/bash
-# This is a combined job script to download reads, perform QC/adapter trimming and assemble genomes for SRA run accessions in EDDIE 
+# This is a combined job script to download reads, perform QC/adapter trimming and assemble genomes for SRA run accessions in EDDIE
 # The script takes a singled input file: comma-delimited table in the format output from the SRA run selector.
-# The prererquisites for the script can be installed in a conda environment called 'sra' using the line below: 
+# The prererquisites for the script can be installed in a conda environment called 'sra' using the line below:
 # `mamba install -c bioconda -c conda-forge -c defaults fastqc=0.11.7 trimmomatic=0.36 spades=3.15.4 kraken2=2.0.9beta sra-tools=2.10.0 entrez-direct=13.3`
 
 ### Setting qsub parameters
@@ -13,7 +13,7 @@ source /etc/profile.d/modules.sh
 module load anaconda/5.3.1
 source activate sra # all software already loaded in this environment
 
-# prepare miscellaneous input 
+# prepare miscellaneous input
 scratch_dir="/exports/eddie/scratch/$(whoami)"
 kraken_db_path="/exports/cmvm/eddie/eb/groups/fitzgerald_grp/software/kraken_default_database/kraken_ddb" # location of a KRAKEN database
 trimmomatic_adapter_path=$(find ${CONDA_PREFIX} -name "adapters" | xargs -I{} readlink -m {} | head -1) # path to trimmomatic adapters
@@ -60,11 +60,11 @@ mate1=$(echo "./${xsn}/${xsn}_1.fastq") # fastq file for paired-sequence mate 1
 mate2=$(echo "./${xsn}/${xsn}_2.fastq") # fastq file for paired-sequence mate 2
 fastq_count=$(ls ./${xsn}/*.fastq | wc -l) # the number of downloaded fastq files (1 if single, 2 if paired)
 # create the QC stats files and run basic qc for untrimmed reads
-echo "${header_line}" > ${xsn}/untrimmed_QC_FASTQ_stats.csv 
+echo "${header_line}" > ${xsn}/untrimmed_QC_FASTQ_stats.csv
 echo "${header_line}" > ${xsn}/trimmed_QC_FASTQ_stats.csv
 for fastq_file in ${xsn}/${xsn}*.fastq
   do echo "collecting stats for $xsn reads ..."
-  qc_stats "${fastq_file}" ${fastq_count} | sed 's/ /,/g' >> ${xsn}/untrimmed_QC_FASTQ_stats.csv 
+  qc_stats "${fastq_file}" ${fastq_count} | sed 's/ /,/g' >> ${xsn}/untrimmed_QC_FASTQ_stats.csv
   echo "running fastqc for raw $xsn reads ..."
   fastqc --outdir="${xsn}" "${fastq_file}" ; done # add stats for each .fastq file to the .csv file
 # check the formatting of any downloaded files
@@ -72,7 +72,8 @@ if [[ -f "${mate1}" && -f "${mate2}" ]] # if downloaded read files exist files e
   then echo "trimming $xsn reads ..."
   trimmomatic PE -threads 1 -phred33 "${mate1}" "${mate2}" "${xsn}/${xsn}_tP1.fastq" "${xsn}/${xsn}_tU1.fastq" "${xsn}/${xsn}_tP2.fastq" "${xsn}/${xsn}_tU2.fastq" ${params}
   cat "${xsn}/${xsn}_tU1.fastq" "${xsn}/${xsn}_tU2.fastq" > "${xsn}/${xsn}_tS.fastq" # combined orphaned reads for SPAdes
-  for trimmed_fastq_file in ${xsn}/${xsn}_t* # collect stats and run fastqc for all the read files
+  rm -v "${xsn}/${xsn}_tU1.fastq" "${xsn}/${xsn}_tU2.fastq" # remove raw orphaned reads
+  for trimmed_fastq_file in ${xsn}/${xsn}_tP* # collect stats and run fastqc for all the read files
     do echo "collecting trimmed stats for $xsn from $trimmed_fastq_file ..."
     qc_stats "${trimmed_fastq_file}" ${fastq_count} | sed 's/ /,/g' >> ${xsn}/trimmed_QC_FASTQ_stats.csv
     echo "running fastqc for trimmed reads in ${trimmed_fastq_file} ..."
@@ -102,7 +103,7 @@ elif [[ -f "${mate0}" ]] # otherwise, if there is a single downloaded read file 
   kraken2 --threads 1 --db "${kraken_db_path}" --use-names --output "${xsn}/K_ddb_${xsn}.txt" --report "${xsn}/k_ddb_${xsn}_report.txt" "${xsn}/${xsn}_t.fastq"
   echo "assembling $xsn reads with SPAdes ..."
   spades.py -t1 --careful --phred-offset 33 -o "${xsn}/assembly" -s "${mate2/_2/_tS}"
-  if [ $(ls -A "./${xsn}/assembly" | wc -l) -eq 0 ] ; then
+  if [ $(ls -A "./${xsn}/assembly/"*.fasta | wc -l) -eq 0 ] ; then
     echo "SPAdes was unsuccessful ..."
     final_outdir="assembly_failed"
   else
@@ -119,7 +120,7 @@ cd ${xsn} # hop into the output directory and rename the SPAdes output
 for fasta_file in *.fasta
   do mv -nv "${fasta_file}" "${xsn}_${fasta_file}"
 done
-rm -v *before_rr*.fasta # only the final assemblies are useful
+rm -v *before_rr*.fasta # only the final assemblies are useful # *scaffolds*.fasta
 cd ..
 if [[ ! -e "${final_outdir}" ]] ; then mkdir "${final_outdir}" ; fi # make a directory for each platform (without one already)
 mv -nv "${xsn}" "${final_outdir}" # move directories for successful downloads to a new location based on the output
